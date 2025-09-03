@@ -1,0 +1,21 @@
+log_level: info
+port: 7880
+rtc:
+  tcp_port: 7883
+  use_external_ip: true
+  port_range_start: 7882
+  port_range_end: 7882
+keys: {}
+turn:
+  enabled: true
+  domain: ${TURN_DOMAIN}
+  secret: ${TURN_SHARED_SECRET}
+  tls: false
+room:
+  max_participants: 32
+  empty_timeout: 60
+  enable_remote_unmute: true
+egress:
+  preset: high
+
+
