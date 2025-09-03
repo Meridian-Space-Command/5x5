@@ -50,6 +50,7 @@ services:
       - -n
       - --realm=${TURN_REALM:-5x5.local}
       - --listening-port=${TURN_PORT:-3478}
+      - --tls-listening-port=5349
       - --min-port=${TURN_MIN_PORT:-49160}
       - --max-port=${TURN_MAX_PORT:-49200}
       - --use-auth-secret
@@ -68,8 +69,6 @@ services:
       - "${LIVEKIT_WS_PORT:-7881}:7881"
       - "${LIVEKIT_RTC_UDP_PORT:-7882}:7882/udp"
       - "${LIVEKIT_RTC_TCP_PORT:-7883}:7883"
-    environment:
-      LIVEKIT_KEYS: ${LIVEKIT_API_KEY:-devkey}:${LIVEKIT_API_SECRET:-devsecret}
     depends_on:
       - redis
       - coturn
@@ -90,7 +89,7 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-changeme}
       LIVEKIT_URL: http://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-devsecret}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-devsecretdevsecretdevsecretdevsecret}
       TURN_DOMAIN: ${TURN_DOMAIN:-localhost}
       TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:-changeme}
     ports:

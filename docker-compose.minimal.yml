@@ -1,0 +1,36 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: fivebyfive-livekit
+    command: ["--config", "/livekit/livekit.yaml"]
+    volumes:
+      - ./infra/livekit/livekit.yaml:/livekit/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+      - "7883:7883"
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: fivebyfive-web
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:4000
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: fivebyfive-api
+    ports:
+      - "4000:4000"
+    environment:
+      - LIVEKIT_URL=http://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=devsecretdevsecretdevsecretdevsecret
