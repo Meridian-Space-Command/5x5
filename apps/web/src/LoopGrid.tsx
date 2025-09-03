@@ -365,78 +365,85 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
   }, [dropAllVersion])
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '50%' }}>
       {loops.map((loop, i) => (
         <div 
           key={i} 
           style={{ 
-            aspectRatio: '1 / 1', 
             border: `1px solid ${theme === 'light' ? '#999' : '#444'}`, 
             borderRadius: 8, 
-            padding: 12,
+            padding: 6,
             display: 'flex',
-            flexDirection: 'column',
+            flexDirection: 'row',
+            alignItems: 'center',
             justifyContent: 'space-between',
-            backgroundColor: loop.joined ? (theme === 'light' ? '#4a8a4a' : '#2a4a2a') : (theme === 'light' ? '#e0e0e0' : '#333')
+            height: 62,
+            backgroundColor: loop.joining
+              ? (theme === 'light' ? '#bfbf4a' : '#8a8a2a')
+              : (loop.joined
+                ? (theme === 'light' ? '#4a8a4a' : '#2a4a2a')
+                : (theme === 'light' ? '#e0e0e0' : '#333'))
           }}
         >
-          <div>
-            <h3 style={{ margin: 0, fontSize: 16 }}>Loop {i + 1}</h3>
-            <p style={{ margin: '4px 0', fontSize: 12, opacity: 0.7 }}>
-              {loop.joining ? 'Joining...' : loop.joined ? 'Connected' : 'Disconnected'}
-            </p>
-            
-            {/* Video Display */}
-            {loop.joined && (
-              <div style={{ 
-                width: '100%', 
-                height: 120, 
-                backgroundColor: '#222', 
-                borderRadius: 4, 
-                margin: '8px 0',
-                overflow: 'hidden',
-                position: 'relative'
-              }}>
-                <video
-                  id={`local-video-${i}`}
-                  autoPlay
-                  muted
-                  playsInline
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover'
-                  }}
-                />
-                {!loop.videoEnabled && (
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: '#333',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 24,
-                    color: '#666'
-                  }}>
-                    📷
-                  </div>
-                )}
-              </div>
-            )}
+          {/* Left: name + thumbnail inline */}
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 220, flex: '1 1 auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <h3 style={{ margin: 0, fontSize: 14 }}>Loop {i + 1}</h3>
+            </div>
+            <div style={{ width: 56, height: 56 }}>
+              {loop.joined && (
+                <div style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  backgroundColor: '#222', 
+                  borderRadius: 4, 
+                  overflow: 'hidden',
+                  position: 'relative'
+                }}>
+                  <video
+                    id={`local-video-${i}`}
+                    autoPlay
+                    muted
+                    playsInline
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                  {!loop.videoEnabled && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: '#333',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 16,
+                      color: '#666'
+                    }}>
+                      📷
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 4 }}>
+          {/* Right: controls */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 32px)', gap: 4 }}>
             {/* Join/Leave Button */}
             <button 
               onClick={() => loop.joined ? leaveLoop(i) : joinLoop(i)}
               disabled={loop.joining}
               style={{ 
-                padding: '6px 4px', 
-                fontSize: 10,
+                width: 32,
+                height: 32,
+                padding: 0, 
+                fontSize: 12,
                 backgroundColor: loop.joined ? (theme === 'light' ? '#8a4a4a' : '#6a2a2a') : (theme === 'light' ? '#999' : '#4a4a4a'),
                 color: 'white',
                 border: 'none',
@@ -452,8 +459,10 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
               onClick={() => toggleMic(i)}
               disabled={!loop.joined}
               style={{ 
-                padding: '6px 4px', 
-                fontSize: 10,
+                width: 32,
+                height: 32,
+                padding: 0, 
+                fontSize: 12,
                 backgroundColor: !loop.joined ? (theme === 'light' ? '#999' : '#4a4a4a') : (loop.micMuted ? (theme === 'light' ? '#8a4a4a' : '#6a2a2a') : (theme === 'light' ? '#4a8a4a' : '#2a4a2a')),
                 color: !loop.joined ? (theme === 'light' ? '#666' : '#666') : 'white',
                 border: 'none',
@@ -469,8 +478,10 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
               onClick={() => toggleAudio(i)}
               disabled={!loop.joined}
               style={{ 
-                padding: '6px 4px', 
-                fontSize: 10,
+                width: 32,
+                height: 32,
+                padding: 0, 
+                fontSize: 12,
                 backgroundColor: !loop.joined ? (theme === 'light' ? '#999' : '#4a4a4a') : (loop.audioMuted ? (theme === 'light' ? '#8a4a4a' : '#6a2a2a') : (theme === 'light' ? '#4a8a4a' : '#2a4a2a')),
                 color: !loop.joined ? (theme === 'light' ? '#666' : '#666') : 'white',
                 border: 'none',
@@ -486,8 +497,10 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
               onClick={() => toggleVideo(i)}
               disabled={!loop.joined}
               style={{ 
-                padding: '6px 4px', 
-                fontSize: 10,
+                width: 32,
+                height: 32,
+                padding: 0, 
+                fontSize: 12,
                 backgroundColor: !loop.joined ? (theme === 'light' ? '#999' : '#4a4a4a') : (loop.videoEnabled ? (theme === 'light' ? '#4a8a4a' : '#2a4a2a') : (theme === 'light' ? '#8a4a4a' : '#6a2a2a')),
                 color: !loop.joined ? (theme === 'light' ? '#666' : '#666') : 'white',
                 border: 'none',
