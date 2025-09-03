@@ -42,11 +42,21 @@ export default function App() {
         justifyContent: 'space-between',
         padding: '12px 16px',
         borderBottom: `1px solid ${theme==='light'?'#999':'#444'}`,
-        backgroundColor: theme === 'light' ? '#e0e0e0' : '#2a2a2a'
+        backgroundColor: theme === 'light' ? '#e0e0e0' : '#2a2a2a',
+        position: 'relative'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <div style={{ fontWeight: 700, fontSize: 18 }}>5x5</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* Drop All Loops */}
+            <button
+              onClick={() => setDropAllVersion(v => v + 1)}
+              style={{
+                ...globalBtnStyle,
+                backgroundColor: theme === 'light' ? '#8a4a4a' : '#6a2a2a',
+              }}
+            >
+              ⏹️ Drop All
+            </button>
+            
             {/* Global Mic Control */}
             <button
               onClick={() => setGlobalMicMuted(!globalMicMuted)}
@@ -79,19 +89,18 @@ export default function App() {
             >
               {globalVideoEnabled ? '📹' : '📷'} {globalVideoEnabled ? 'Video' : 'Off'}
             </button>
-
-            {/* Drop All Loops */}
-            <button
-              onClick={() => setDropAllVersion(v => v + 1)}
-              style={{
-                ...globalBtnStyle,
-                backgroundColor: theme === 'light' ? '#8a4a4a' : '#6a2a2a',
-              }}
-            >
-              ⏹️ Drop All
-            </button>
           </div>
-        </div>
+          
+          {/* Centered Title */}
+          <div style={{ 
+            position: 'absolute', 
+            left: '50%', 
+            transform: 'translateX(-50%)',
+            fontWeight: 700, 
+            fontSize: 18 
+          }}>
+            5x5
+          </div>
         <button 
           onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
           style={{
@@ -101,7 +110,8 @@ export default function App() {
             color: theme === 'light' ? '#fff' : '#fff',
             border: 'none',
             borderRadius: 4,
-            cursor: 'pointer'
+            cursor: 'pointer',
+            fontFamily: 'Courier New, monospace'
           }}
         >
           Toggle Theme

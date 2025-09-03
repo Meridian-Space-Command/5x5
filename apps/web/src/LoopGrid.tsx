@@ -46,7 +46,7 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
     { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, messages: [], chatInput: '', participants: new Map() },
   ])
   const [activeChatLoop, setActiveChatLoop] = useState<number | null>(null)
-  const converseInitializedRef = useRef(false)
+
   const chatScrollRef = useRef<HTMLDivElement>(null)
 
   const joinLoop = useCallback(async (loopIndex: number) => {
