@@ -1,4 +1,45 @@
 services:
+  prosody:
+    image: prosody/prosody:latest
+    container_name: fivebyfive-prosody
+    volumes:
+      - ./infra/prosody/prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
+    ports:
+      - "5222:5222"   # XMPP Client-to-Server
+      - "5280:5280"   # HTTP (BOSH / WebSocket)
+    restart: unless-stopped
+  rocketchat:
+    image: docker.io/rocketchat/rocket.chat:latest
+    container_name: fivebyfive-rocketchat
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - ROOT_URL=http://localhost:3000
+      - MONGO_URL=mongodb://mongodb:27017/rocketchat?replicaSet=rs0
+      - MONGO_OPLOG_URL=mongodb://mongodb:27017/local?replicaSet=rs0
+    depends_on:
+      - mongodb
+    ports:
+      - "3000:3000"
+
+  mongodb:
+    image: docker.io/bitnami/mongodb:6.0
+    container_name: fivebyfive-mongodb
+    restart: unless-stopped
+    environment:
+      - MONGODB_REPLICA_SET_MODE=primary
+      - MONGODB_REPLICA_SET_NAME=rs0
+      - MONGODB_PORT_NUMBER=27017
+      - MONGODB_ENABLE_DIRECTORY_PER_DB=true
+      - MONGODB_INITIAL_PRIMARY_HOST=localhost
+      - MONGODB_INITIAL_PRIMARY_PORT_NUMBER=27017
+      - MONGODB_ADVERTISED_HOSTNAME=mongodb
+      - ALLOW_EMPTY_PASSWORD=yes
+    volumes:
+      - mongo_data:/bitnami/mongodb
+    ports:
+      - "27017:27017"
+
   livekit:
     image: livekit/livekit-server:latest
     container_name: fivebyfive-livekit
@@ -22,6 +63,7 @@ services:
       - VITE_API_URL=http://localhost:4000
     depends_on:
       - api
+      - prosody
 
   api:
     build:
@@ -34,3 +76,6 @@ services:
       - LIVEKIT_URL=http://livekit:7880
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=devsecretdevsecretdevsecretdevsecret
+
+volumes:
+  mongo_data:

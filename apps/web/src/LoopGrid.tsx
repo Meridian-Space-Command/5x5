@@ -1,6 +1,14 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react'
 import { Room, createLocalAudioTrack, createLocalVideoTrack } from 'livekit-client'
 
+interface ChatMessage {
+  id: string
+  senderId: string
+  senderLabel: string
+  text: string
+  ts: number
+}
+
 interface LoopState {
   joining: boolean
   joined: boolean
@@ -9,6 +17,11 @@ interface LoopState {
   videoEnabled: boolean
   room: Room | null
   videoTrack: any | null
+  roomName?: string
+  identity?: string
+  chatInput?: string
+  messages?: ChatMessage[]
+  participants: Map<string, any> // Track remote participants
 }
 
 interface LoopGridProps {
@@ -25,13 +38,16 @@ interface LoopGridProps {
 
 export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMuted, globalVideoEnabled, dropAllVersion }: LoopGridProps) {
   const [loops, setLoops] = useState<LoopState[]>([
-    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
-    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
-    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
-    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
-    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
-    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
+    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, messages: [], chatInput: '', participants: new Map() },
+    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, messages: [], chatInput: '', participants: new Map() },
+    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, messages: [], chatInput: '', participants: new Map() },
+    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, messages: [], chatInput: '', participants: new Map() },
+    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, messages: [], chatInput: '', participants: new Map() },
+    { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, messages: [], chatInput: '', participants: new Map() },
   ])
+  const [activeChatLoop, setActiveChatLoop] = useState<number | null>(null)
+  const converseInitializedRef = useRef(false)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
 
   const joinLoop = useCallback(async (loopIndex: number) => {
     const loop = loops[loopIndex]
@@ -43,7 +59,7 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
 
     try {
       const identity = `user-${Math.random().toString(36).slice(2, 8)}`
-      const roomName = `loop-${loopIndex + 1}-${Date.now()}`
+      const roomName = `loop-${loopIndex + 1}`
       
       const resp = await fetch(`${import.meta.env.VITE_API_URL}/token`, {
         method: 'POST',
@@ -80,8 +96,48 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
       // Wait a moment for tracks to be properly registered
       await new Promise(resolve => setTimeout(resolve, 100))
 
+      // Wire up data channel listener for chat
+      room.on('dataReceived', (payload: Uint8Array, participant, kind, topic) => {
+        try {
+          const text = new TextDecoder().decode(payload)
+          const msg = JSON.parse(text) as ChatMessage
+          setLoops(prev => prev.map((l) => {
+            if (l.room === room) {
+              const messages = Array.isArray(l.messages) ? l.messages : []
+              return { ...l, messages: [...messages, msg] }
+            }
+            return l
+          }))
+        } catch (e) {
+          console.log('Failed to parse chat message', e)
+        }
+      })
+
+      // Track participants joining/leaving
+      room.on('participantConnected', (participant) => {
+        setLoops(prev => prev.map((l) => {
+          if (l.room === room) {
+            const newParticipants = new Map(l.participants)
+            newParticipants.set(participant.identity, participant)
+            return { ...l, participants: newParticipants }
+          }
+          return l
+        }))
+      })
+
+      room.on('participantDisconnected', (participant) => {
+        setLoops(prev => prev.map((l) => {
+          if (l.room === room) {
+            const newParticipants = new Map(l.participants)
+            newParticipants.delete(participant.identity)
+            return { ...l, participants: newParticipants }
+          }
+          return l
+        }))
+      })
+
       setLoops(prev => prev.map((l, i) => 
-        i === loopIndex ? { joining: false, joined: true, micMuted: false, audioMuted: false, videoEnabled: true, room, videoTrack: video } : l
+        i === loopIndex ? { joining: false, joined: true, micMuted: false, audioMuted: false, videoEnabled: true, room, videoTrack: video, roomName, identity, messages: [], chatInput: '', participants: new Map() } : l
       ))
 
       // Attach video stream to the video element after state update
@@ -115,13 +171,21 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
 
     try {
       await loop.room.disconnect()
+      
+      // Chat cleanup (no external chat service to close)
+      
+      // Clear active chat if this was the active loop
+      if (activeChatLoop === loopIndex) {
+        setActiveChatLoop(null)
+      }
+      
       setLoops(prev => prev.map((l, i) => 
-        i === loopIndex ? { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null } : l
+        i === loopIndex ? { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, roomName: l.roomName, messages: [], chatInput: '', identity: l.identity, participants: new Map() } : l
       ))
     } catch (e) {
       console.error(`Failed to leave loop ${loopIndex + 1}:`, e)
     }
-  }, [loops])
+  }, [loops, activeChatLoop])
 
   const toggleMic = useCallback(async (loopIndex: number) => {
     const loop = loops[loopIndex]
@@ -206,13 +270,23 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
           ))
           console.log(`Video enabled for loop ${loopIndex + 1}`)
           
-          // Re-attach video stream to element after unmuting
+          // Re-attach video stream to elements after unmuting
           setTimeout(() => {
             const videoElement = document.getElementById(`local-video-${loopIndex}`) as HTMLVideoElement
             if (videoElement && loop.videoTrack.mediaStream) {
               videoElement.srcObject = loop.videoTrack.mediaStream
               videoElement.play().catch(e => console.log('Video play error after unmute:', e))
               console.log(`Video stream re-attached after unmute for loop ${loopIndex + 1}`)
+            }
+            
+            // Also update chat video if this is the active chat loop
+            if (activeChatLoop === loopIndex) {
+              const chatVideoElement = document.getElementById(`chat-video-${loopIndex}`) as HTMLVideoElement
+              if (chatVideoElement && loop.videoTrack.mediaStream) {
+                chatVideoElement.srcObject = loop.videoTrack.mediaStream
+                chatVideoElement.play().catch(e => console.log('Chat video play error after unmute:', e))
+                console.log(`Chat video stream re-attached after unmute for loop ${loopIndex + 1}`)
+              }
             }
           }, 100)
         } else {
@@ -251,15 +325,20 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
     } catch (e) {
       console.error(`Failed to toggle video for loop ${loopIndex + 1}:`, e)
     }
-  }, [loops])
+  }, [loops, activeChatLoop])
 
   // Effect to attach video streams to video elements when they become available
+  const prevVideoTracksRef = useRef<(any | null)[]>([])
   useEffect(() => {
     loops.forEach((loop, i) => {
       if (loop.joined && loop.videoTrack && loop.videoEnabled) {
+        const prevTrack = prevVideoTracksRef.current[i]
+        // Only re-attach if the video track actually changed
+        if (prevTrack === loop.videoTrack) return
+        prevVideoTracksRef.current[i] = loop.videoTrack
+        
         const videoElement = document.getElementById(`local-video-${i}`) as HTMLVideoElement
         if (videoElement) {
-          // Always re-attach the stream when video is enabled (handles toggle cases)
           console.log(`Attaching video stream to element ${i} via useEffect`)
           console.log(`Video track object:`, loop.videoTrack)
           
@@ -275,6 +354,46 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
       }
     })
   }, [loops])
+
+  // Attach selected loop's video to the chat panel video when chat is opened
+  // Attach video to chat pane only when loop/video changes, not on every keystroke
+  const prevVideoRefs = useRef<(any | null)[]>([])
+  const prevActiveChatLoop = useRef<number | null>(null)
+  useEffect(() => {
+    if (activeChatLoop == null) return
+    const loop = loops[activeChatLoop]
+    
+    // Always update when activeChatLoop changes, or when video track changes
+    const shouldUpdate = prevActiveChatLoop.current !== activeChatLoop || 
+                        (loop.videoTrack && prevVideoRefs.current[activeChatLoop] !== loop.videoTrack)
+    
+    if (!shouldUpdate) return
+    
+    prevActiveChatLoop.current = activeChatLoop
+    if (loop.videoTrack) {
+      prevVideoRefs.current[activeChatLoop] = loop.videoTrack
+    }
+    
+    const el = document.getElementById(`chat-video-${activeChatLoop}`) as HTMLVideoElement | null
+    if (el) {
+      if (loop.videoTrack && loop.videoEnabled && loop.videoTrack.mediaStream) {
+        el.srcObject = loop.videoTrack.mediaStream
+        el.play().catch(() => {})
+        console.log(`Chat video updated for loop ${activeChatLoop + 1} - video enabled`)
+      } else {
+        // Don't clear the video element - the placeholder will be shown instead
+        console.log(`Chat video placeholder shown for loop ${activeChatLoop + 1} - video disabled`)
+      }
+    }
+  }, [activeChatLoop, loops])
+
+  // Auto-scroll to bottom when new messages arrive in active chat
+  useEffect(() => {
+    if (activeChatLoop == null) return
+    const container = document.getElementById('chat-scroll')
+    if (!container) return
+    container.scrollTop = container.scrollHeight
+  }, [activeChatLoop, loops[activeChatLoop!]?.messages])
 
   // Apply global controls to all loops
   useEffect(() => {
@@ -350,22 +469,234 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
   // Drop all loops when dropAllVersion changes
   useEffect(() => {
     const dropAll = async () => {
+      const anyWindow = window as any
+      
       for (let i = 0; i < loops.length; i++) {
         const loop = loops[i]
         if (loop.room) {
           try {
             await loop.room.disconnect()
+            
+            // Chat cleanup (no external chat service to close)
           } catch {}
         }
       }
-      setLoops(prev => prev.map(l => ({ joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null })))
+      
+      // Clear active chat
+      setActiveChatLoop(null)
+      setLoops(prev => prev.map(l => ({ joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null, participants: new Map() })))
     }
     dropAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropAllVersion])
 
+  // Auto-scroll chat to bottom when messages change
+  useEffect(() => {
+    if (activeChatLoop !== null && chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    }
+  }, [loops[activeChatLoop]?.messages, activeChatLoop])
+
+  // Dynamic video grid component
+  const renderVideoGrid = (loopIndex: number) => {
+    const loop = loops[loopIndex]
+    if (!loop || !loop.joined || !loop.room) return null
+
+    const allParticipants = Array.from(loop.participants.values())
+    const localParticipant = loop.room.localParticipant
+    const totalVideos = allParticipants.length + 1 // +1 for local participant
+
+    // Calculate grid layout based on number of participants
+    let gridStyle: React.CSSProperties = {}
+    
+    if (totalVideos === 1) {
+      // Single video fills the space
+      gridStyle = {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }
+    } else if (totalVideos === 2) {
+      // Two videos side by side
+      gridStyle = {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gridTemplateRows: '1fr',
+        gap: 4
+      }
+    } else if (totalVideos === 3) {
+      // One centered at top, two side by side underneath
+      gridStyle = {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gridTemplateRows: '1fr 1fr',
+        gap: 4
+      }
+    } else if (totalVideos === 4) {
+      // 2x2 grid
+      gridStyle = {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gridTemplateRows: '1fr 1fr',
+        gap: 4
+      }
+    } else if (totalVideos <= 6) {
+      // 3x2 grid
+      gridStyle = {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr 1fr',
+        gridTemplateRows: '1fr 1fr',
+        gap: 4
+      }
+    } else {
+      // 3x3 grid for more participants
+      gridStyle = {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr 1fr',
+        gridTemplateRows: '1fr 1fr 1fr',
+        gap: 4
+      }
+    }
+
+    return (
+      <div style={{...gridStyle, height: '100%'}}>
+        {/* Local participant video */}
+        <div style={{ 
+          position: 'relative', 
+          backgroundColor: theme === 'light' ? '#ddd' : '#222', 
+          borderRadius: 4, 
+          overflow: 'hidden',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          {loop.videoEnabled && loop.videoTrack ? (
+            <video 
+              id={`chat-video-${loopIndex}`} 
+              autoPlay 
+              muted 
+              playsInline 
+              style={{ 
+                height: '100%', 
+                width: 'auto',
+                maxWidth: '100%',
+                objectFit: 'contain' 
+              }} 
+            />
+          ) : (
+            <div style={{ 
+              height: '100%', 
+              width: 'auto',
+              maxWidth: '100%',
+              aspectRatio: '16/9',
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              backgroundColor: theme === 'light' ? '#bbb' : '#333',
+              color: theme === 'light' ? '#666' : '#999',
+              fontSize: 24
+            }}>
+              📷
+            </div>
+          )}
+          <div style={{ 
+            position: 'absolute', 
+            bottom: 4, 
+            left: 4, 
+            background: 'rgba(0,0,0,0.7)', 
+            color: 'white', 
+            padding: '2px 6px', 
+            borderRadius: 4, 
+            fontSize: 10 
+          }}>
+            {localParticipant.identity} (You)
+          </div>
+        </div>
+
+        {/* Remote participant videos */}
+        {allParticipants.map((participant, index) => {
+          const videoTrack = Array.from(participant.videoTracks.values())[0]?.track
+          return (
+            <div key={participant.identity} style={{ 
+              position: 'relative', 
+              backgroundColor: theme === 'light' ? '#ddd' : '#222', 
+              borderRadius: 4, 
+              overflow: 'hidden',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {videoTrack ? (
+                <video 
+                  autoPlay 
+                  playsInline 
+                  ref={(el) => {
+                    if (el && videoTrack.mediaStream) {
+                      el.srcObject = videoTrack.mediaStream
+                    }
+                  }}
+                  style={{ 
+                    height: '100%', 
+                    width: 'auto',
+                    maxWidth: '100%',
+                    objectFit: 'contain' 
+                  }} 
+                />
+              ) : (
+                <div style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  backgroundColor: '#333',
+                  color: '#666',
+                  fontSize: 12
+                }}>
+                  📷
+                </div>
+              )}
+              <div style={{ 
+                position: 'absolute', 
+                bottom: 4, 
+                left: 4, 
+                background: 'rgba(0,0,0,0.7)', 
+                color: 'white', 
+                padding: '2px 6px', 
+                borderRadius: 4, 
+                fontSize: 10 
+              }}>
+                {participant.identity}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '50%' }}>
+    <div style={{ 
+      display: 'grid', 
+      gridTemplateColumns: '1fr 1fr', 
+      gridTemplateRows: '1fr 1fr 1fr', 
+      gap: 12, 
+      width: '100%', 
+      height: '100%',
+      minHeight: 0,
+      flex: 1
+    }}>
+      {/* Left: Loop list (spans all 3 rows) */}
+      <div style={{ 
+        gridColumn: '1', 
+        gridRow: '1 / 4', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: 8,
+        minHeight: 0
+      }}>
       {loops.map((loop, i) => (
         <div 
           key={i} 
@@ -434,7 +765,7 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
           </div>
           
           {/* Right: controls */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 32px)', gap: 4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 32px)', gap: 4 }}>
             {/* Join/Leave Button */}
             <button 
               onClick={() => loop.joined ? leaveLoop(i) : joinLoop(i)}
@@ -510,9 +841,169 @@ export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMut
             >
               {loop.videoEnabled ? '📹' : '📷'}
             </button>
+
+            {/* Chat Toggle Button */}
+            <button 
+              onClick={() => setActiveChatLoop(prev => prev === i ? null : i)}
+              disabled={!loop.joined}
+              style={{ 
+                width: 32,
+                height: 32,
+                padding: 0, 
+                fontSize: 12,
+                backgroundColor: !loop.joined ? (theme === 'light' ? '#999' : '#4a4a4a') : (activeChatLoop === i ? (theme === 'light' ? '#4a8a8a' : '#2a4a4a') : (theme === 'light' ? '#999' : '#4a4a4a')),
+                color: !loop.joined ? (theme === 'light' ? '#666' : '#666') : 'white',
+                border: 'none',
+                borderRadius: 4,
+                cursor: !loop.joined ? 'not-allowed' : 'pointer'
+              }}
+            >
+              💬
+            </button>
           </div>
         </div>
       ))}
+      </div>
+
+      {/* Right: Video grid (top row) */}
+      {activeChatLoop != null && (
+        <div style={{ 
+          gridColumn: '2', 
+          gridRow: '1',
+          backgroundColor: theme === 'light' ? '#ddd' : '#222', 
+          borderRadius: 8, 
+          overflow: 'hidden', 
+          padding: 4,
+          minHeight: 0
+        }}>
+          {renderVideoGrid(activeChatLoop)}
+        </div>
+      )}
+
+      {/* Right: Chat area (spans bottom 2 rows) */}
+      {activeChatLoop != null && (
+        <div style={{ 
+          gridColumn: '2', 
+          gridRow: '2 / 4',
+          display: 'flex', 
+          flexDirection: 'column', 
+          border: `1px solid ${theme === 'light' ? '#999' : '#444'}`, 
+          borderRadius: 8, 
+          overflow: 'hidden',
+          minHeight: 0
+        }}>
+              <div style={{ fontSize: 12, opacity: 0.7, padding: '8px 8px 4px 8px', background: theme === 'light' ? '#f2f2f2' : '#1e1e1e', borderBottom: `1px solid ${theme === 'light' ? '#ccc' : '#333'}` }}>
+                Chat for Loop {activeChatLoop + 1}
+              </div>
+              <div ref={chatScrollRef} id="chat-scroll" style={{ 
+                flex: 1, 
+                padding: 8, 
+                background: theme === 'light' ? '#f2f2f2' : '#1e1e1e', 
+                overflowY: 'auto',
+                minHeight: 0
+              }}>
+                <div style={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: 6,
+                  justifyContent: 'flex-end',
+                  minHeight: '100%'
+                }}>
+                  {(loops[activeChatLoop]?.messages || []).map((m) => {
+                    const date = new Date(m.ts)
+                    const timestamp = date.getFullYear() + '-' + 
+                      String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                      String(date.getDate()).padStart(2, '0') + ' ' + 
+                      String(date.getHours()).padStart(2, '0') + ':' + 
+                      String(date.getMinutes()).padStart(2, '0') + ':' + 
+                      String(date.getSeconds()).padStart(2, '0') + '.' + 
+                      String(date.getMilliseconds()).padStart(3, '0')
+                    
+                    return (
+                      <div key={m.id} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ fontSize: 11, opacity: 0.7 }}>{timestamp} · {m.senderLabel}</div>
+                        <div style={{ fontSize: 13 }}>{m.text}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: `1px solid ${theme === 'light' ? '#ccc' : '#333'}` }}>
+                <input 
+                  value={activeChatLoop != null ? (loops[activeChatLoop]?.chatInput || '') : ''}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value
+                    if (activeChatLoop == null) return
+                    setLoops(prev => prev.map((l, idx) => idx === activeChatLoop ? { ...l, chatInput: value } : l))
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (activeChatLoop == null) return
+                      const loop = loops[activeChatLoop]
+                      if (!loop || !loop.room) return
+                      const text = (loop.chatInput || '').trim()
+                      if (!text) return
+                      const msg = { id: crypto.randomUUID(), senderId: loop.identity || 'me', senderLabel: loop.identity || 'me', text, ts: Date.now() }
+                      const encoded = new TextEncoder().encode(JSON.stringify(msg))
+                      loop.room.localParticipant.publishData(encoded).catch(console.error)
+                      setLoops(prev => prev.map((l, idx) => idx === activeChatLoop ? { ...l, messages: [...(l.messages || []), msg], chatInput: '' } : l))
+                    }
+                  }}
+                                    placeholder="Type a message..." 
+                  style={{
+                    flex: 1,
+                    padding: '6px 8px',
+                    borderRadius: 4,
+                    border: `1px solid ${theme === 'light' ? '#bbb' : '#555'}`,
+                    background: theme === 'light' ? '#fff' : '#2a2a2a',
+                    color: colors.fg,
+                    fontFamily: 'Courier New, monospace',
+                    fontSize: 13
+                  }} 
+                />
+                                <button onClick={() => {
+                  if (activeChatLoop == null) return
+                  const loop = loops[activeChatLoop]
+                  if (!loop || !loop.room) return
+                  const text = (loop.chatInput || '').trim()
+                  if (!text) return
+                  const msg = { id: crypto.randomUUID(), senderId: loop.identity || 'me', senderLabel: loop.identity || 'me', text, ts: Date.now() }
+                  const encoded = new TextEncoder().encode(JSON.stringify(msg))
+                  loop.room.localParticipant.publishData(encoded).catch(console.error)
+                  setLoops(prev => prev.map((l, idx) => idx === activeChatLoop ? { ...l, messages: [...(l.messages || []), msg], chatInput: '' } : l))
+                }} style={{
+                  padding: '6px 10px',
+                  border: 'none',
+                  borderRadius: 4,
+                  background: theme === 'light' ? '#4a8a4a' : '#2a4a2a',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontFamily: 'Courier New, monospace',
+                  fontSize: 13
+                }}>
+                  Send
+                </button>
+              </div>
+            </div>
+        )}
+
+      {/* Placeholder when no chat is active */}
+      {activeChatLoop == null && (
+        <div style={{ 
+          gridColumn: '2', 
+          gridRow: '1 / 4',
+          border: `1px dashed ${theme === 'light' ? '#bbb' : '#555'}`, 
+          borderRadius: 8, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          color: theme === 'light' ? '#666' : '#aaa', 
+          fontSize: 12 
+        }}>
+          Select a loop chat to view video grid and messages
+        </div>
+      )}
     </div>
   )
 }

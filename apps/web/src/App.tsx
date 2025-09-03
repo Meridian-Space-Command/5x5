@@ -109,7 +109,7 @@ export default function App() {
       </header>
       
       {/* Main Content */}
-      <main style={{ flex: 1, padding: 12 }}>
+      <main style={{ flex: 1, padding: 12, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <LoopGrid 
           theme={theme} 
           colors={colors}
