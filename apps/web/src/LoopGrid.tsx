@@ -11,7 +11,19 @@ interface LoopState {
   videoTrack: any | null
 }
 
-export default function LoopGrid() {
+interface LoopGridProps {
+  theme: 'light' | 'dark'
+  colors: {
+    bg: string
+    fg: string
+  }
+  globalMicMuted: boolean
+  globalAudioMuted: boolean
+  globalVideoEnabled: boolean
+  dropAllVersion: number
+}
+
+export default function LoopGrid({ theme, colors, globalMicMuted, globalAudioMuted, globalVideoEnabled, dropAllVersion }: LoopGridProps) {
   const [loops, setLoops] = useState<LoopState[]>([
     { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
     { joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null },
@@ -264,6 +276,94 @@ export default function LoopGrid() {
     })
   }, [loops])
 
+  // Apply global controls to all loops
+  useEffect(() => {
+    setLoops(prev => prev.map(loop => {
+      if (loop.joined && loop.room) {
+        const localParticipant = loop.room.localParticipant
+        
+        // Apply global mic mute to audio tracks
+        const audioTracks = localParticipant.audioTracks
+        if (audioTracks && audioTracks.size > 0) {
+          const audioTrack = Array.from(audioTracks.values())[0]
+          if (globalMicMuted && !audioTrack.track.isMuted) {
+            audioTrack.track.mute().catch(console.error)
+          } else if (!globalMicMuted && audioTrack.track.isMuted) {
+            audioTrack.track.unmute().catch(console.error)
+          }
+        }
+        
+        // Apply global video toggle to video tracks
+        if (loop.videoTrack) {
+          if (!globalVideoEnabled && !loop.videoTrack.isMuted) {
+            loop.videoTrack.mute().catch(console.error)
+          } else if (globalVideoEnabled && loop.videoTrack.isMuted) {
+            loop.videoTrack.unmute().catch(console.error)
+          }
+        }
+        
+        return {
+          ...loop,
+          micMuted: globalMicMuted,
+          audioMuted: globalAudioMuted,
+          videoEnabled: globalVideoEnabled
+        }
+      }
+      return loop
+    }))
+  }, [globalMicMuted, globalAudioMuted, globalVideoEnabled])
+
+  // Ensure video tracks are present and attached when global video is enabled
+  useEffect(() => {
+    const enableAllVideos = async () => {
+      if (!globalVideoEnabled) return
+      // For each joined loop, ensure a live video track and attach to element
+      for (let i = 0; i < loops.length; i++) {
+        const loop = loops[i]
+        if (!loop.joined || !loop.room) continue
+        try {
+          let videoTrack = loop.videoTrack
+          if (!videoTrack || videoTrack.isMuted || !videoTrack.mediaStream) {
+            // (Re)create track and publish
+            const newTrack = await createLocalVideoTrack()
+            await loop.room.localParticipant.publishTrack(newTrack)
+            videoTrack = newTrack
+            // store
+            setLoops(prev => prev.map((l, idx) => idx === i ? { ...l, videoTrack: newTrack, videoEnabled: true } : l))
+          }
+          // Attach to element
+          const el = document.getElementById(`local-video-${i}`) as HTMLVideoElement | null
+          if (el && videoTrack.mediaStream) {
+            el.srcObject = videoTrack.mediaStream
+            // play
+            el.play().catch(() => {})
+          }
+        } catch (e) {
+          console.log('Failed ensuring video for loop', i + 1, e)
+        }
+      }
+    }
+    enableAllVideos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalVideoEnabled])
+
+  // Drop all loops when dropAllVersion changes
+  useEffect(() => {
+    const dropAll = async () => {
+      for (let i = 0; i < loops.length; i++) {
+        const loop = loops[i]
+        if (loop.room) {
+          try {
+            await loop.room.disconnect()
+          } catch {}
+        }
+      }
+      setLoops(prev => prev.map(l => ({ joining: false, joined: false, micMuted: false, audioMuted: false, videoEnabled: false, room: null, videoTrack: null })))
+    }
+    dropAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dropAllVersion])
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
       {loops.map((loop, i) => (
@@ -271,13 +371,13 @@ export default function LoopGrid() {
           key={i} 
           style={{ 
             aspectRatio: '1 / 1', 
-            border: '1px solid #444', 
+            border: `1px solid ${theme === 'light' ? '#999' : '#444'}`, 
             borderRadius: 8, 
             padding: 12,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            backgroundColor: loop.joined ? '#2a4a2a' : '#333'
+            backgroundColor: loop.joined ? (theme === 'light' ? '#4a8a4a' : '#2a4a2a') : (theme === 'light' ? '#e0e0e0' : '#333')
           }}
         >
           <div>
@@ -337,7 +437,7 @@ export default function LoopGrid() {
               style={{ 
                 padding: '6px 4px', 
                 fontSize: 10,
-                backgroundColor: loop.joined ? '#6a2a2a' : '#4a4a4a',
+                backgroundColor: loop.joined ? (theme === 'light' ? '#8a4a4a' : '#6a2a2a') : (theme === 'light' ? '#999' : '#4a4a4a'),
                 color: 'white',
                 border: 'none',
                 borderRadius: 4,
@@ -354,8 +454,8 @@ export default function LoopGrid() {
               style={{ 
                 padding: '6px 4px', 
                 fontSize: 10,
-                backgroundColor: !loop.joined ? '#4a4a4a' : (loop.micMuted ? '#6a2a2a' : '#2a4a2a'),
-                color: !loop.joined ? '#666' : 'white',
+                backgroundColor: !loop.joined ? (theme === 'light' ? '#999' : '#4a4a4a') : (loop.micMuted ? (theme === 'light' ? '#8a4a4a' : '#6a2a2a') : (theme === 'light' ? '#4a8a4a' : '#2a4a2a')),
+                color: !loop.joined ? (theme === 'light' ? '#666' : '#666') : 'white',
                 border: 'none',
                 borderRadius: 4,
                 cursor: !loop.joined ? 'not-allowed' : 'pointer'
@@ -371,8 +471,8 @@ export default function LoopGrid() {
               style={{ 
                 padding: '6px 4px', 
                 fontSize: 10,
-                backgroundColor: !loop.joined ? '#4a4a4a' : (loop.audioMuted ? '#6a2a2a' : '#2a4a2a'),
-                color: !loop.joined ? '#666' : 'white',
+                backgroundColor: !loop.joined ? (theme === 'light' ? '#999' : '#4a4a4a') : (loop.audioMuted ? (theme === 'light' ? '#8a4a4a' : '#6a2a2a') : (theme === 'light' ? '#4a8a4a' : '#2a4a2a')),
+                color: !loop.joined ? (theme === 'light' ? '#666' : '#666') : 'white',
                 border: 'none',
                 borderRadius: 4,
                 cursor: !loop.joined ? 'not-allowed' : 'pointer'
@@ -388,8 +488,8 @@ export default function LoopGrid() {
               style={{ 
                 padding: '6px 4px', 
                 fontSize: 10,
-                backgroundColor: !loop.joined ? '#4a4a4a' : (loop.videoEnabled ? '#2a4a2a' : '#6a2a2a'),
-                color: !loop.joined ? '#666' : 'white',
+                backgroundColor: !loop.joined ? (theme === 'light' ? '#999' : '#4a4a4a') : (loop.videoEnabled ? (theme === 'light' ? '#4a8a4a' : '#2a4a2a') : (theme === 'light' ? '#8a4a4a' : '#6a2a2a')),
+                color: !loop.joined ? (theme === 'light' ? '#666' : '#666') : 'white',
                 border: 'none',
                 borderRadius: 4,
                 cursor: !loop.joined ? 'not-allowed' : 'pointer'
